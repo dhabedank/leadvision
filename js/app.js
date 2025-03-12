@@ -567,12 +567,31 @@ function initializeFilters(data) {
         document.getElementById('closingsTypeFilter').addEventListener('change', function() {
             const showBrokerInput = this.value === 'client';
             document.querySelector('.broker-input-group').style.display = showBrokerInput ? 'block' : 'none';
-            // Directly update dashboard since this doesn't require refiltering data
-            updateDashboard();
+            
+            // Reset _excludeFromClosingCounts flags and reapply filters completely
+            if (rawData && rawData.length > 0) {
+                rawData.forEach(row => {
+                    delete row._excludeFromClosingCounts;
+                });
+                // Apply filters completely instead of just updating the dashboard
+                applyFilters();
+            } else {
+                // If no data yet, just update dashboard
+                updateDashboard();
+            }
         });
         document.getElementById('brokerNameInput').addEventListener('input', function() {
-            // Directly update dashboard for broker name changes too
-            updateDashboard();
+            // Reset _excludeFromClosingCounts flags and reapply filters completely
+            if (rawData && rawData.length > 0) {
+                rawData.forEach(row => {
+                    delete row._excludeFromClosingCounts;
+                });
+                // Apply filters completely instead of just updating the dashboard
+                applyFilters();
+            } else {
+                // If no data yet, just update dashboard
+                updateDashboard();
+            }
         });
 
         log('Filters initialized', { 
@@ -956,7 +975,16 @@ function showMonthDetails(monthData, isClosings) {
     const closingColumns = [
         { field: 'purchased sale date', label: 'Closing Date' },
         { field: 'purchased address', label: 'Property Address' },
-        { field: 'purchased value', label: 'Value', format: value => value ? formatCurrency(parseFloat(value)) : '-' },
+        { field: 'purchased value', label: 'Value', format: value => {
+            if (!value) return '-';
+            // Make sure the value is clean for parsing
+            let numValue = value;
+            if (typeof value === 'string') {
+                // Remove non-numeric characters except decimal point
+                numValue = parseFloat(value.replace(/[^0-9.-]+/g, ''));
+            }
+            return formatCurrency(numValue);
+        } },
         { field: 'purchased buyer broker', label: 'Buyer Broker' }
     ];
     
