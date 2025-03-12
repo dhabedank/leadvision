@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Lead Performance & ROI Dashboard</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+        <link rel="stylesheet" href="css/styles.css">
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="header-left">
+                    <h1 class="title">
+                        Lead Performance & ROI Analysis Dashboard
+                    </h1>
+                    <p class="subtitle">
+                        Insights into lead performance, conversion metrics, and
+                        ROI
+                    </p>
+                </div>
+                <div>
+                    <div class="file-inputs">
+                        <div class="file-input-group">
+                            <label class="file-label">Leads:</label>
+                            <input type="file" id="leadsInput" accept=".csv" />
+                        </div>
+                        <div class="file-input-group">
+                            <label class="file-label">Referrals:</label>
+                            <input type="file" id="referralsInput" accept=".csv" />
+                        </div>
+                        <div class="file-input-group">
+                            <label class="file-label">Sold Data:</label>
+                            <input type="file" id="soldDataInput" accept=".csv" />
+                        </div>
+                        <div class="file-input-group">
+                            <label class="file-label">Client Broker Name:</label>
+                            <input type="text" id="clientBrokerInput" class="text-input" placeholder="Enter your broker name" />
+                        </div>
+                        <button id="processDataBtn" class="process-btn">Process Data</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="error"></div>
+
+            <div id="loading" class="loading">
+                <div>Upload your lead data files and click "Process Data" to visualize</div>
+            </div>
+
+            <div id="dashboard">
+                <div class="filters">
+                    <div class="filters-row">
+                        <div class="filter-group">
+                            <label class="filter-label" for="sourceFilter"
+                                >Source</label
+                            >
+                            <select id="sourceFilter" class="select-filter">
+                                <option value="all">All Sources</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label class="filter-label" for="marketFilter"
+                                >Markets</label
+                            >
+                            <select id="marketFilter" class="select-filter" multiple size="4">
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label" for="zoneFilter"
+                                >Lead Zone</label
+                            >
+                            <select id="zoneFilter" class="select-filter">
+                                <option value="all">All Zones</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label" for="yearFilter"
+                                >Year</label
+                            >
+                            <select id="yearFilter" class="select-filter">
+                                <option value="all">All Years</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="filters-row">
+                        <div class="filter-group">
+                            <label class="filter-label" for="closingsTypeFilter"
+                                >Closings</label
+                            >
+                            <select id="closingsTypeFilter" class="select-filter">
+                                <option value="all">All Closings</option>
+                                <option value="client">Client Closings</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group broker-input-group" style="display: none;">
+                            <label class="filter-label" for="brokerNameInput"
+                                >Broker Name</label
+                            >
+                            <input id="brokerNameInput" type="text" class="text-input" placeholder="Enter your broker name">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="summary" id="summaryMetrics">
+                    <!-- Summary metrics will be added here dynamically -->
+                </div>
+
+                <div class="panels">
+                    <div class="panel panel-full">
+                        <h3 class="panel-title">
+                            Monthly Leads and Closings
+                        </h3>
+                        <div class="chart-container">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">Monthly Conversion Rate</h3>
+                        <div class="chart-container">
+                            <canvas id="conversionChart"></canvas>
+                        </div>
+                    </div>
+
+
+                    <div class="panel">
+                        <h3 class="panel-title">Leads by Price Range</h3>
+                        <div class="chart-container">
+                            <canvas id="priceRangeChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">Leads by Delivery Method</h3>
+                        <div class="chart-container">
+                            <canvas id="deliveryMethodChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel panel-full">
+                        <h3 class="panel-title">Top Performing Zip Codes</h3>
+                        <div class="chart-container">
+                            <canvas id="zipCodeChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel panel-full">
+                        <div class="tab-container">
+                            <div class="tabs">
+                                <div class="tab active" data-tab="lead-flow">
+                                    Lead Flow Pacing
+                                </div>
+                                <div class="tab" data-tab="closings">
+                                    Recent Closings
+                                </div>
+                            </div>
+
+                            <div class="tab-content active" id="lead-flow">
+                                <table id="leadFlowTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Month</th>
+                                            <th>Leads</th>
+                                            <th>Spillover</th>
+                                            <th>Spillover %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Lead flow data will be added here dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="tab-content" id="closings">
+                                <table id="closingsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Client Name</th>
+                                            <th>Delivery Date</th>
+                                            <th>Closing Date</th>
+                                            <th>Type</th>
+                                            <th>Source</th>
+                                            <th>Status</th>
+                                            <th>Sales Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Closings data will be added here dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <span class="debug-toggle" onclick="toggleDebug()"
+                        >Show Debug Info</span
+                    >
+                    <div id="debugInfo"></div>
+                </div>
+            </div>
+        </div>
+
+        <script src="js/app.js"></script>
+    </body>
+</html>
