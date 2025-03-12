@@ -76,12 +76,33 @@ function parseDate(dateStr) {
 
 // Format currency
 function formatCurrency(value) {
+    // Handle edge cases
+    if (value === null || value === undefined || value === '') return '-';
+    
+    // Make sure we have a number
+    let numValue;
+    if (typeof value === 'string') {
+        const cleaned = value.replace(/[^0-9.-]+/g, '');
+        numValue = parseFloat(cleaned);
+    } else {
+        numValue = parseFloat(value);
+    }
+    
+    // Extra check for very low values that might be missing multiplication
+    if (numValue > 0 && numValue < 1000) {
+        // For home prices, anything below 1000 is likely supposed to be in thousands
+        numValue *= 1000;
+        console.log('Auto-adjusting low value in formatCurrency:', value, '->', numValue);
+    }
+    
+    if (isNaN(numValue)) return '-';
+    
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-    }).format(value);
+    }).format(numValue);
 }
 
 // Set up tabs
@@ -225,9 +246,30 @@ function processMonthlyData(data) {
                     let purchaseValue = 0;
                     if (row['purchased value']) {
                         if (typeof row['purchased value'] === 'string') {
-                            purchaseValue = parseFloat(row['purchased value'].replace(/[^0-9.-]+/g, '')) || 0;
+                            // Remove all non-numeric characters except decimal point
+                            const cleaned = row['purchased value'].replace(/[^0-9.-]+/g, '');
+                            purchaseValue = parseFloat(cleaned) || 0;
+                            
+                            // If the result is an invalid number or very small, check if we need to multiply
+                            // This handles cases where decimal separators are misinterpreted
+                            if (purchaseValue > 0 && purchaseValue < 1000) {
+                                // If it's a small number like 155, it might be 155,000 in reality
+                                const originalStr = row['purchased value'].toString();
+                                // If we see a K, M, or no decimal points but commas, likely needs adjustment
+                                if (originalStr.includes('K') || originalStr.includes('k')) {
+                                    purchaseValue *= 1000; // Convert $155K to $155,000
+                                } else if (originalStr.includes('M') || originalStr.includes('m')) {
+                                    purchaseValue *= 1000000; // Convert $1.55M to $1,550,000
+                                } else if (!originalStr.includes('.') && (originalStr.includes(',') || purchaseValue < 1000)) {
+                                    // If there's no decimal but there are commas, or value is very low for house price
+                                    purchaseValue *= 1000; // Assume it's in thousands
+                                }
+                            }
+                            
+                            // Debug logging
+                            console.log('Monthly value conversion:', row['purchased value'], '->', purchaseValue);
                         } else {
-                            purchaseValue = row['purchased value'] || 0;
+                            purchaseValue = parseFloat(row['purchased value']) || 0;
                         }
                     }
                     months[yearMonth].closingValue += purchaseValue;
@@ -441,9 +483,32 @@ function processClosingsData(data) {
             let purchaseValue = 0;
             if (row['purchased value']) {
                 if (typeof row['purchased value'] === 'string') {
-                    purchaseValue = parseFloat(row['purchased value'].replace(/[^0-9.-]+/g, '')) || 0;
+                    // Remove all non-numeric characters except decimal point
+                    const cleaned = row['purchased value'].replace(/[^0-9.-]+/g, '');
+                    purchaseValue = parseFloat(cleaned) || 0;
+                    
+                    // If the result is an invalid number or very small, check if we need to multiply
+                    // This handles cases where decimal separators are misinterpreted
+                    if (purchaseValue > 0 && purchaseValue < 1000) {
+                        // If it's a small number like 155, it might be 155,000 in reality
+                        if (purchaseValue < 1000) {
+                            const originalStr = row['purchased value'].toString();
+                            // If we see a K, M, or no decimal points but commas, likely needs adjustment
+                            if (originalStr.includes('K') || originalStr.includes('k')) {
+                                purchaseValue *= 1000; // Convert $155K to $155,000
+                            } else if (originalStr.includes('M') || originalStr.includes('m')) {
+                                purchaseValue *= 1000000; // Convert $1.55M to $1,550,000
+                            } else if (!originalStr.includes('.') && (originalStr.includes(',') || purchaseValue < 1000)) {
+                                // If there's no decimal but there are commas, or value is very low for house price
+                                purchaseValue *= 1000; // Assume it's in thousands
+                            }
+                        }
+                    }
+                    
+                    // Debug logging
+                    console.log('Closing value conversion:', row['purchased value'], '->', purchaseValue);
                 } else {
-                    purchaseValue = row['purchased value'] || 0;
+                    purchaseValue = parseFloat(row['purchased value']) || 0;
                 }
             }
 
@@ -976,13 +1041,25 @@ function showMonthDetails(monthData, isClosings) {
         { field: 'purchased sale date', label: 'Closing Date' },
         { field: 'purchased address', label: 'Property Address' },
         { field: 'purchased value', label: 'Value', format: value => {
-            if (!value) return '-';
-            // Make sure the value is clean for parsing
-            let numValue = value;
+            if (!value && value !== 0) return '-';
+            
+            // Make sure the value is properly parsed
+            let numValue;
+            
             if (typeof value === 'string') {
-                // Remove non-numeric characters except decimal point
-                numValue = parseFloat(value.replace(/[^0-9.-]+/g, ''));
+                // Remove all non-numeric characters except decimal point
+                const cleaned = value.replace(/[^0-9.-]+/g, '');
+                numValue = parseFloat(cleaned);
+            } else {
+                numValue = parseFloat(value);
             }
+            
+            // Check if we have a valid number
+            if (isNaN(numValue)) return '-';
+            
+            // For debugging - log the original and parsed values
+            console.log('Original value:', value, 'Parsed value:', numValue);
+            
             return formatCurrency(numValue);
         } },
         { field: 'purchased buyer broker', label: 'Buyer Broker' }
@@ -1633,7 +1710,31 @@ function blendData(leadsData, referralsData, soldData) {
             // Update with Transaction Close Date and Amount
             existingLead["purchased sale date"] = referral["Transaction Close Date"] || "";
             existingLead["purchased address"] = referral["Transaction Address"] || "";
-            existingLead["purchased value"] = referral["Transaction Close Amount"] || "";
+            
+            // Process the purchased value with special handling for currency strings
+            let purchaseValue = referral["Transaction Close Amount"] || "";
+            if (typeof purchaseValue === 'string' && purchaseValue.trim() !== '') {
+                // Try to handle common currency formats
+                const cleanedValue = purchaseValue.replace(/[^0-9.-kmKM]+/g, '');
+                let numericValue = parseFloat(cleanedValue) || 0;
+                
+                // If the value seems too small for a house price, check for K/M suffixes
+                if (numericValue > 0 && numericValue < 1000) {
+                    if (purchaseValue.toUpperCase().includes('K')) {
+                        numericValue *= 1000; // Convert $155K to $155,000
+                    } else if (purchaseValue.toUpperCase().includes('M')) {
+                        numericValue *= 1000000; // Convert $1.55M to $1,550,000
+                    } else if (!purchaseValue.includes('.') && (purchaseValue.includes(',') || numericValue < 1000)) {
+                        // If there's no decimal but there are commas, or value is very low for house price
+                        numericValue *= 1000; // Assume it's in thousands
+                    }
+                }
+                
+                console.log('Blend value conversion:', purchaseValue, '->', numericValue);
+                existingLead["purchased value"] = numericValue;
+            } else {
+                existingLead["purchased value"] = purchaseValue;
+            }
             
             // Set broker to the client broker name for closed Market VIP leads
             existingLead["purchased buyer broker"] = brokerName || "Rock Realty";
@@ -1653,7 +1754,32 @@ function blendData(leadsData, referralsData, soldData) {
                 existingLead["Status"] = "Close";
                 existingLead["purchased sale date"] = referral["Transaction Close Date"] || "";
                 existingLead["purchased address"] = referral["Transaction Address"] || "";
-                existingLead["purchased value"] = referral["Transaction Close Amount"] || "";
+                
+                // Process the purchased value with special handling for currency strings
+                let purchaseValue = referral["Transaction Close Amount"] || "";
+                if (typeof purchaseValue === 'string' && purchaseValue.trim() !== '') {
+                    // Try to handle common currency formats
+                    const cleanedValue = purchaseValue.replace(/[^0-9.-kmKM]+/g, '');
+                    let numericValue = parseFloat(cleanedValue) || 0;
+                    
+                    // If the value seems too small for a house price, check for K/M suffixes
+                    if (numericValue > 0 && numericValue < 1000) {
+                        if (purchaseValue.toUpperCase().includes('K')) {
+                            numericValue *= 1000; // Convert $155K to $155,000
+                        } else if (purchaseValue.toUpperCase().includes('M')) {
+                            numericValue *= 1000000; // Convert $1.55M to $1,550,000
+                        } else if (!purchaseValue.includes('.') && (purchaseValue.includes(',') || numericValue < 1000)) {
+                            // If there's no decimal but there are commas, or value is very low for house price
+                            numericValue *= 1000; // Assume it's in thousands
+                        }
+                    }
+                    
+                    console.log('OpCity value conversion:', purchaseValue, '->', numericValue);
+                    existingLead["purchased value"] = numericValue;
+                } else {
+                    existingLead["purchased value"] = purchaseValue;
+                }
+                
                 existingLead["purchased buyer broker"] = "OpCity";
             } else {
                 // Otherwise just update status if needed
@@ -1686,7 +1812,32 @@ function blendData(leadsData, referralsData, soldData) {
             if (isClosed) {
                 leadRecord["purchased sale date"] = referral["Transaction Close Date"] || "";
                 leadRecord["purchased address"] = referral["Transaction Address"] || "";
-                leadRecord["purchased value"] = referral["Transaction Close Amount"] || "";
+                
+                // Process the purchased value with special handling for currency strings
+                let purchaseValue = referral["Transaction Close Amount"] || "";
+                if (typeof purchaseValue === 'string' && purchaseValue.trim() !== '') {
+                    // Try to handle common currency formats
+                    const cleanedValue = purchaseValue.replace(/[^0-9.-kmKM]+/g, '');
+                    let numericValue = parseFloat(cleanedValue) || 0;
+                    
+                    // If the value seems too small for a house price, check for K/M suffixes
+                    if (numericValue > 0 && numericValue < 1000) {
+                        if (purchaseValue.toUpperCase().includes('K')) {
+                            numericValue *= 1000; // Convert $155K to $155,000
+                        } else if (purchaseValue.toUpperCase().includes('M')) {
+                            numericValue *= 1000000; // Convert $1.55M to $1,550,000
+                        } else if (!purchaseValue.includes('.') && (purchaseValue.includes(',') || numericValue < 1000)) {
+                            // If there's no decimal but there are commas, or value is very low for house price
+                            numericValue *= 1000; // Assume it's in thousands
+                        }
+                    }
+                    
+                    console.log('New OpCity value conversion:', purchaseValue, '->', numericValue);
+                    leadRecord["purchased value"] = numericValue;
+                } else {
+                    leadRecord["purchased value"] = purchaseValue;
+                }
+                
                 leadRecord["purchased buyer broker"] = "OpCity";
             } else {
                 leadRecord["purchased sale date"] = "";
@@ -1716,7 +1867,32 @@ function blendData(leadsData, referralsData, soldData) {
             if (!existingLead["purchased sale date"]) {
                 existingLead["purchased sale date"] = soldRecord["purchased sale date"] || "";
                 existingLead["purchased address"] = soldRecord["purchased address"] || "";
-                existingLead["purchased value"] = soldRecord["purchased value"] || "";
+                
+                // Process the purchased value with special handling for currency strings
+                let purchaseValue = soldRecord["purchased value"] || "";
+                if (typeof purchaseValue === 'string' && purchaseValue.trim() !== '') {
+                    // Try to handle common currency formats
+                    const cleanedValue = purchaseValue.replace(/[^0-9.-kmKM]+/g, '');
+                    let numericValue = parseFloat(cleanedValue) || 0;
+                    
+                    // If the value seems too small for a house price, check for K/M suffixes
+                    if (numericValue > 0 && numericValue < 1000) {
+                        if (purchaseValue.toUpperCase().includes('K')) {
+                            numericValue *= 1000; // Convert $155K to $155,000
+                        } else if (purchaseValue.toUpperCase().includes('M')) {
+                            numericValue *= 1000000; // Convert $1.55M to $1,550,000
+                        } else if (!purchaseValue.includes('.') && (purchaseValue.includes(',') || numericValue < 1000)) {
+                            // If there's no decimal but there are commas, or value is very low for house price
+                            numericValue *= 1000; // Assume it's in thousands
+                        }
+                    }
+                    
+                    console.log('Sold data value conversion:', purchaseValue, '->', numericValue);
+                    existingLead["purchased value"] = numericValue;
+                } else {
+                    existingLead["purchased value"] = purchaseValue;
+                }
+                
                 existingLead["purchased buyer broker"] = soldRecord["purchased buyer broker"] || "";
                 
                 soldMatchCount++;
